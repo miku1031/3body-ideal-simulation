@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>XSimple 三体 3D 可视化 (增强物理版)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        
+        /* 主控制面板样式 */
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            background: rgba(20, 20, 40, 0.85);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #555;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+        }
+        h2 { margin-top: 0; font-size: 20px; text-align: center; color: #4fc3f7; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .subtitle { text-align: center; color: #aaa; font-size: 12px; margin-bottom: 15px; }
+        .control-group { margin-bottom: 18px; }
+        label { display: block; font-size: 13px; margin-bottom: 6px; color: #ccc; }
+        .star-label { font-weight: bold; }
+        input[type=range] { width: 100%; cursor: pointer; height: 6px; border-radius: 3px; background: #333; outline: none; -webkit-appearance: none; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #4fc3f7; cursor: pointer; }
+        .value-display { float: right; color: #4fc3f7; font-family: monospace; }
+        
+        /* 物理信息面板 */
+        #physics-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 380px;
+            background: rgba(40, 20, 20, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #633;
+            backdrop-filter: blur(5px);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        #physics-panel h3 { color: #ff9800; margin-top: 0; border-bottom: 1px solid #633; padding-bottom: 8px; }
+        .physics-item { margin-bottom: 8px; }
+        .physics-label { display: inline-block; width: 220px; color: #ccc; }
+        .physics-value { display: inline-block; font-family: 'Courier New', monospace; color: #4caf50; }
+        .warning { color: #ff5252; font-weight: bold; }
+        .note { font-size: 11px; color: #888; margin-top: 15px; font-style: italic; }
+
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        button {
+            flex: 1;
+            padding: 10px 5px;
+            background: linear-gradient(to bottom, #444, #222);
+            color: white;
+            border: 1px solid #666;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+        button:hover { background: linear-gradient(to bottom, #555, #333); border-color: #4fc3f7; }
+        button:active { background: linear-gradient(to bottom, #222, #111); }
+        #btn-pause.running { background: linear-gradient(to bottom, #2d4d2d, #1a3b1a); }
+        #btn-pause.paused { background: linear-gradient(to bottom, #4d2d2d, #3b1a1a); }
+
+        .tip { font-size: 11px; color: #888; margin-top: 15px; text-align: center; line-height: 1.4; }
+        .checkbox-group { display: flex; align-items: center; margin-top: 5px;}
+        .checkbox-group label { margin-bottom: 0; margin-left: 8px;}
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <h2>三体系统控制台</h2>
+        <div class="subtitle">增强物理规则 | 实时混沌分析</div>
+        
+        <div class="control-group">
+            <label><span class="star-label" style="color: #ff4444;">● 恒星 A (Alpha)</span> 质量 <span id="val-m1" class="value-display">1.0</span></label>
+            <input type="range" id="mass1" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+        <div class="control-group">
+            <label><span class="star-label" style="color: #44ff44;">● 恒星 B (Beta)</span> 质量 <span id="val-m2" class="value-display">1.0</span></label>
+            <input type="range" id="mass2" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+        <div class="control-group">
+            <label><span class="star-label" style="color: #4444ff;">● 恒星 C (Gamma)</span> 质量 <span id="val-m3" class="value-display">1.0</span></label>
+            <input type="range" id="mass3" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+
+        <!-- 新增：时间速率控制 -->
+        <div class="control-group">
+            <label>模拟时间速率 <span id="val-timeScale" class="value-display">1.0x</span></label>
+            <input type="range" id="timeScale" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+        
+        <div class="control-group">
+            <label>物理常数与规则</label>
+            <div style="font-size: 11px; color: #aaa; margin-bottom: 8px;">引力常数 G ≈ 6.674e-11 (已缩放)</div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="enableRelativity" checked>
+                <label for="enableRelativity">启用相对论修正 (质量增加 & 引力延迟)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="showPhysics" checked>
+                <label for="showPhysics">显示实时物理信息</label>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button id="btn-reset">重置系统</button>
+            <button id="btn-pause" class="running">暂停模拟</button>
+        </div>
+        <div class="tip">拖拽鼠标旋转视角，滚轮缩放 | 已集成真实天体物理规则</div>
+    </div>
+
+    <!-- 物理信息面板 -->
+    <div id="physics-panel">
+        <h3>实时物理分析</h3>
+        <div class="physics-item">
+            <span class="physics-label">系统总能量 (相对变化):</span>
+            <span id="info-energy" class="physics-value">0.00%</span>
+        </div>
+        <div class="physics-item">
+            <span class="physics-label">系统总角动量 (L):</span>
+            <span id="info-angmom" class="physics-value">0.0000</span>
+        </div>
+        <div class="physics-item">
+            <span class="physics-label">模拟时间速率:</span>
+            <span id="info-timeScale" class="physics-value">1.0x</span>
+        </div>
+        <div class="physics-item">
+            <span class="physics-label">近似李雅普诺夫指数 (λ):</span>
+            <span id="info-lyapunov" class="physics-value">0.0000</span>
+        </div>
+        <div class="physics-item">
+            <span class="physics-label">混沌指示器 (轨道偏心率):</span>
+        </div>
+        <div class="physics-item" style="margin-left: 15px;">
+            <span class="physics-label" style="color: #ff4444; width: 30px;">A:</span>
+            <span id="info-ecc-a" class="physics-value">0.000</span>
+            <span class="physics-label" style="color: #44ff44; width: 30px; margin-left: 20px;">B:</span>
+            <span id="info-ecc-b" class="physics-value">0.000</span>
+            <span class="physics-label" style="color: #4444ff; width: 30px; margin-left: 20px;">C:</span>
+            <span id="info-ecc-c" class="physics-value">0.000</span>
+        </div>
+        <div class="physics-item">
+            <span class="physics-label">相对论效应状态:</span>
+            <span id="info-relativity" class="physics-value">活跃</span>
+        </div>
+        <div class="note">注：三体系统是混沌系统，总能量在数值误差内应守恒。偏心率越接近1，瞬时轨道越扁，系统越不稳定。正的李雅普诺夫指数表明系统对初始条件极度敏感（混沌）。</div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <!-- 引入 Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        let bodies = [];
+        let isPaused = false;
+        let physicsPanel = document.getElementById('physics-panel');
+        
+        // ==================== 增强物理参数 ====================
+        const REAL_G = 6.67430e-11; // m^3 kg^-1 s^-2
+        const SCALE_DISTANCE = 1e9; // 1单位 = 1e9 米 (百万公里)
+        const SCALE_MASS = 1e30;    // 1单位 = 1e30 kg (约0.5个太阳质量)
+        const SCALE_TIME = 1e6;     // 1单位时间 = 1e6 秒 (~11.6天)
+        
+        // 计算缩放后的G值
+        let G = REAL_G * (SCALE_MASS * Math.pow(SCALE_TIME, 2)) / Math.pow(SCALE_DISTANCE, 3);
+        
+        const C = 3.0; // 缩放后的“光速”
+        const SOFTENING = 0.2;
+        const BASE_TIME_STEP = 0.01; // 基础时间步长
+        let timeScale = 1.0; // 时间速率乘数
+        const TRAIL_LENGTH = 400;
+        // ==================== 混沌分析参数 ====================
+        let initialEnergy = 0;
+        let energyHistory = [];
+        const HISTORY_LENGTH = 100;
+        // 用于计算李雅普诺夫指数的“影子”系统
+        let shadowBodies = [];
+        let shadowDeviation = 1e-4; // 初始微小扰动
+        let lyapunovExponent = 0;
+        let totalTime = 0;
+
+        // 初始化场景
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            createStarField();
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
+            camera.position.set(0, 40, 60);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0x333333, 1.5);
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 1.5, 500);
+            pointLight.position.set(0, 20, 0);
+            scene.add(pointLight);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            resetSimulation();
+            setupUI();
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        // 星体类 (增强版)
+        class Body {
+            constructor(color, position, velocity, mass, name) {
+                this.name = name;
+                this.mass = mass;
+                this.restMass = mass; // 静止质量
+                this.position = new THREE.Vector3(...position);
+                this.velocity = new THREE.Vector3(...velocity);
+                this.acceleration = new THREE.Vector3(0, 0, 0);
+                this.color = color;
+                this.trailPositions = [];
+                // 用于引力延迟：存储“过去”的位置
+                this.delayedPosition = this.position.clone();
+                this.positionHistory = [this.position.clone()];
+                this.historyIndex = 0;
+
+                const geometry = new THREE.SphereGeometry(this.getRadius(), 32, 32);
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: color, 
+                    emissive: color,
+                    emissiveIntensity: 0.4,
+                    roughness: 0.1,
+                    metalness: 0.8
+                });
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.position.copy(this.position);
+                scene.add(this.mesh);
+
+                this.lineGeometry = new THREE.BufferGeometry();
+                const lineMaterial = new THREE.LineBasicMaterial({ color: color, opacity: 0.5, transparent: true, linewidth: 1 });
+                this.trailLine = new THREE.Line(this.lineGeometry, lineMaterial);
+                scene.add(this.trailLine);
+            }
+
+            getRadius() {
+                return 0.8 + (this.mass * 0.3);
+            }
+
+            // 计算相对论性质量增加因子 (洛伦兹因子 γ)
+            getLorentzFactor() {
+                const v = this.velocity.length();
+                const beta = v / C;
+                if (beta >= 0.99) { // 防止数值问题
+                    console.warn(`星体${this.name}速度接近光速! v=${v.toFixed(3)}c`);
+                    return 7.0; // 给予一个上限
+                }
+                return 1 / Math.sqrt(1 - beta * beta);
+            }
+
+            updateDelayedPosition() {
+                // 简单的引力延迟模拟：光从其他星体到达本星体需要时间
+                // 这里做一个近似：使用上一帧的位置作为“延迟位置”
+                this.delayedPosition.copy(this.positionHistory[this.historyIndex]);
+                // 更新历史环形缓冲区
+                this.historyIndex = (this.historyIndex + 1) % 10;
+                this.positionHistory[this.historyIndex] = this.position.clone();
+            }
+
+            updateMesh() {
+                this.mesh.position.copy(this.position);
+                const targetScale = this.getRadius();
+                this.mesh.scale.setScalar(targetScale);
+
+                this.trailPositions.push(this.position.x, this.position.y, this.position.z);
+                if (this.trailPositions.length > TRAIL_LENGTH * 3) {
+                    this.trailPositions.splice(0, 3);
+                }
+                this.lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(this.trailPositions, 3));
+            }
+
+            // 计算瞬时轨道偏心率 (相对系统质心)
+            calculateEccentricity(comPos, comVel) {
+                const rVec = new THREE.Vector3().subVectors(this.position, comPos);
+                const vVec = new THREE.Vector3().subVectors(this.velocity, comVel);
+                const r = rVec.length();
+                const v = vVec.length();
+                if (r < 1e-5) return 1; // 避免除以零
+
+                const specificEnergy = 0.5 * v * v - G * this.mass / r; // 近似，忽略其他星体
+                const specificAngMom = rVec.cross(vVec).length();
+                const ecc = Math.sqrt(1 + (2 * specificEnergy * specificAngMom * specificAngMom) / (G * G * this.mass * this.mass));
+                return isNaN(ecc) ? 1 : Math.min(ecc, 2); // 限制最大值
+            }
+
+            // 静态方法：计算系统质心
+            static getCenterOfMass(bodies) {
+                const com = new THREE.Vector3(0,0,0);
+                const totalMass = bodies.reduce((sum, b) => sum + b.mass, 0);
+                bodies.forEach(b => com.add(b.position.clone().multiplyScalar(b.mass)));
+                return com.divideScalar(totalMass);
+            }
+            // 静态方法：计算系统质心速度
+            static getCenterOfMassVelocity(bodies) {
+                const comV = new THREE.Vector3(0,0,0);
+                const totalMass = bodies.reduce((sum, b) => sum + b.mass, 0);
+                bodies.forEach(b => comV.add(b.velocity.clone().multiplyScalar(b.mass)));
+                return comV.divideScalar(totalMass);
+            }
+
+            static updateForces(bodies, enableRelativity) {
+                for (let body of bodies) {
+                    body.acceleration.set(0, 0, 0);
+                }
+
+                for (let i = 0; i < bodies.length; i++) {
+                    for (let j = i + 1; j < bodies.length; j++) {
+                        const bodyA = bodies[i];
+                        const bodyB = bodies[j];
+
+                        // 使用延迟位置（如果启用相对论效应）
+                        const posA = enableRelativity ? bodyA.delayedPosition : bodyA.position;
+                        const posB = enableRelativity ? bodyB.delayedPosition : bodyB.position;
+
+                        const distVec = new THREE.Vector3().subVectors(posB, posA);
+                        const distanceSq = distVec.lengthSq();
+                        const distance = Math.sqrt(distanceSq);
+
+                        // 计算相对论修正质量
+                        let mA = bodyA.mass;
+                        let mB = bodyB.mass;
+                        if (enableRelativity) {
+                            const gammaA = bodyA.getLorentzFactor();
+                            const gammaB = bodyB.getLorentzFactor();
+                            mA = bodyA.restMass * gammaA;
+                            mB = bodyB.restMass * gammaB;
+                        }
+
+                        const forceMag = (G * mA * mB) / (distanceSq + (SOFTENING * SOFTENING));
+                        const forceVec = distVec.normalize().multiplyScalar(forceMag);
+
+                        // 应用牛顿第三定律
+                        bodyA.acceleration.add(forceVec.clone().divideScalar(bodyA.mass)); // 注意：加速度仍除以观测质量
+                        bodyB.acceleration.sub(forceVec.clone().divideScalar(bodyB.mass));
+                    }
+                }
+            }
+
+            static updatePositions(bodies, deltaTime) {
+                for (let body of bodies) {
+                    // 使用传入的时间步长
+                    body.velocity.add(body.acceleration.clone().multiplyScalar(deltaTime));
+                    body.position.add(body.velocity.clone().multiplyScalar(deltaTime));
+                    if (document.getElementById('enableRelativity').checked) {
+                        body.updateDelayedPosition();
+                    }
+                    body.updateMesh();
+                }
+            }
+        }
+
+        // 创建用于混沌分析的“影子”系统
+        function createShadowSystem() {
+            shadowBodies = [];
+            bodies.forEach((body, idx) => {
+                const shadowPos = body.position.clone().add(new THREE.Vector3(
+                    (Math.random()-0.5) * shadowDeviation,
+                    (Math.random()-0.5) * shadowDeviation,
+                    (Math.random()-0.5) * shadowDeviation
+                ));
+                const shadowVel = body.velocity.clone();
+                // 注意：这里创建影子系统时，不将其mesh添加到场景，只用于计算
+                const shadowBody = {
+                    name: body.name + "'",
+                    mass: body.mass,
+                    restMass: body.restMass,
+                    position: shadowPos,
+                    velocity: shadowVel,
+                    acceleration: new THREE.Vector3(0,0,0),
+                    delayedPosition: shadowPos.clone(),
+                    positionHistory: [shadowPos.clone()],
+                    historyIndex: 0,
+                    getLorentzFactor: function() {
+                        const v = this.velocity.length();
+                        const beta = v / C;
+                        if (beta >= 0.99) return 7.0;
+                        return 1 / Math.sqrt(1 - beta * beta);
+                    },
+                    updateDelayedPosition: function() {
+                        this.delayedPosition.copy(this.positionHistory[this.historyIndex]);
+                        this.historyIndex = (this.historyIndex + 1) % 10;
+                        this.positionHistory[this.historyIndex] = this.position.clone();
+                    }
+                };
+                shadowBodies.push(shadowBody);
+            });
+        }
+
+        // 更新影子系统并计算李雅普诺夫指数
+        function updateShadowAndLyapunov(deltaTime) {
+            if (shadowBodies.length === 0 || shadowBodies.length !== bodies.length) return;
+            
+            // 1. 同步主系统的质量到影子系统
+            bodies.forEach((body, idx) => {
+                if (shadowBodies[idx]) {
+                    shadowBodies[idx].mass = body.mass;
+                    shadowBodies[idx].restMass = body.restMass;
+                }
+            });
+
+            // 2. 为影子系统计算受力
+            // 为影子系统计算加速度
+            for (let body of shadowBodies) {
+                body.acceleration.set(0,0,0);
+            }
+            const enableRel = document.getElementById('enableRelativity').checked;
+            for (let i = 0; i < shadowBodies.length; i++) {
+                for (let j = i + 1; j < shadowBodies.length; j++) {
+                    const bodyA = shadowBodies[i];
+                    const bodyB = shadowBodies[j];
+
+                    const posA = enableRel ? bodyA.delayedPosition : bodyA.position;
+                    const posB = enableRel ? bodyB.delayedPosition : bodyB.position;
+
+                    const distVec = new THREE.Vector3().subVectors(posB, posA);
+                    const distanceSq = distVec.lengthSq();
+                    const distance = Math.sqrt(distanceSq);
+
+                    let mA = bodyA.mass;
+                    let mB = bodyB.mass;
+                    if (enableRel) {
+                        const gammaA = bodyA.getLorentzFactor();
+                        const gammaB = bodyB.getLorentzFactor();
+                        mA = bodyA.restMass * gammaA;
+                        mB = bodyB.restMass * gammaB;
+                    }
+
+                    const forceMag = (G * mA * mB) / (distanceSq + (SOFTENING * SOFTENING));
+                    const forceVec = distVec.normalize().multiplyScalar(forceMag);
+
+                    bodyA.acceleration.add(forceVec.clone().divideScalar(bodyA.mass));
+                    bodyB.acceleration.sub(forceVec.clone().divideScalar(bodyB.mass));
+                }
+            }
+
+            // 3. 更新影子系统位置
+            for (let i=0; i<shadowBodies.length; i++) {
+                const sb = shadowBodies[i];
+                sb.velocity.add(sb.acceleration.clone().multiplyScalar(deltaTime));
+                sb.position.add(sb.velocity.clone().multiplyScalar(deltaTime));
+                if (enableRel) {
+                    sb.updateDelayedPosition();
+                }
+            }
+
+            // 4. 计算平均分离度
+            let totalSeparation = 0;
+            for (let i=0; i<bodies.length; i++) {
+                const sep = bodies[i].position.distanceTo(shadowBodies[i].position);
+                totalSeparation += sep;
+            }
+            const avgSeparation = totalSeparation / bodies.length;
+
+            // 5. 计算并记录李雅普诺夫指数 (λ = (1/t) * ln(d(t)/d0))
+            if (totalTime > 0 && avgSeparation > 0 && shadowDeviation > 0) {
+                const currentLyapunov = Math.log(avgSeparation / shadowDeviation) / totalTime;
+                // 平滑处理
+                lyapunovExponent = 0.95 * lyapunovExponent + 0.05 * currentLyapunov;
+            }
+
+            // 6. 防止影子系统分离过大，定期重归一化
+            if (avgSeparation > 1.0) {
+                const scale = shadowDeviation / avgSeparation;
+                for (let i=0; i<shadowBodies.length; i++) {
+                    const sb = shadowBodies[i];
+                    const mb = bodies[i];
+                    // 将影子系统拉回主系统附近，保持方向
+                    const offset = new THREE.Vector3().subVectors(sb.position, mb.position).multiplyScalar(scale);
+                    sb.position.copy(mb.position.clone().add(offset));
+                    // 同样处理速度
+                    const velOffset = new THREE.Vector3().subVectors(sb.velocity, mb.velocity).multiplyScalar(scale);
+                    sb.velocity.copy(mb.velocity.clone().add(velOffset));
+                }
+            }
+        }
+
+        // 计算系统总能量 (动能 + 势能)
+        function calculateSystemEnergy() {
+            let kinetic = 0;
+            let potential = 0;
+            for (let i=0; i<bodies.length; i++) {
+                const bodyA = bodies[i];
+                kinetic += 0.5 * bodyA.mass * bodyA.velocity.lengthSq();
+                for (let j=i+1; j<bodies.length; j++) {
+                    const bodyB = bodies[j];
+                    const dist = bodyA.position.distanceTo(bodyB.position);
+                    potential -= (G * bodyA.mass * bodyB.mass) / (dist + SOFTENING);
+                }
+            }
+            return kinetic + potential;
+        }
+
+        // 计算系统总角动量
+        function calculateSystemAngularMomentum() {
+            const totalL = new THREE.Vector3(0,0,0);
+            const com = Body.getCenterOfMass(bodies);
+            const comV = Body.getCenterOfMassVelocity(bodies);
+            for (let body of bodies) {
+                const r = new THREE.Vector3().subVectors(body.position, com);
+                const v = new THREE.Vector3().subVectors(body.velocity, comV);
+                const p = v.clone().multiplyScalar(body.mass); // 动量
+                totalL.add(r.cross(p));
+            }
+            return totalL.length();
+        }
+
+        // 更新物理信息面板
+        function updatePhysicsPanel() {
+            if (!document.getElementById('showPhysics').checked) {
+                physicsPanel.style.display = 'none';
+                return;
+            }
+            physicsPanel.style.display = 'block';
+
+            const currentEnergy = calculateSystemEnergy();
+            if (initialEnergy === 0) initialEnergy = currentEnergy;
+            const energyDrift = ((currentEnergy - initialEnergy) / Math.abs(initialEnergy)) * 100;
+            document.getElementById('info-energy').textContent = energyDrift.toFixed(2) + '%';
+            if (Math.abs(energyDrift) > 5) {
+                document.getElementById('info-energy').className = 'physics-value warning';
+            } else {
+                document.getElementById('info-energy').className = 'physics-value';
+            }
+
+            const totalL = calculateSystemAngularMomentum();
+            document.getElementById('info-angmom').textContent = totalL.toFixed(4);
+
+            // 显示当前时间速率
+            document.getElementById('info-timeScale').textContent = timeScale.toFixed(1) + 'x';
+
+            document.getElementById('info-lyapunov').textContent = lyapunovExponent.toFixed(4);
+            document.getElementById('info-lyapunov').className = lyapunovExponent > 0.01 ? 'physics-value warning' : 'physics-value';
+
+            const com = Body.getCenterOfMass(bodies);
+            const comV = Body.getCenterOfMassVelocity(bodies);
+            const eccA = bodies[0].calculateEccentricity(com, comV);
+            const eccB = bodies[1].calculateEccentricity(com, comV);
+            const eccC = bodies[2].calculateEccentricity(com, comV);
+            document.getElementById('info-ecc-a').textContent = eccA.toFixed(3);
+            document.getElementById('info-ecc-b').textContent = eccB.toFixed(3);
+            document.getElementById('info-ecc-c').textContent = eccC.toFixed(3);
+
+            const relStatus = document.getElementById('enableRelativity').checked ? '活跃' : '关闭';
+            document.getElementById('info-relativity').textContent = relStatus;
+        }
+
+        function createStarField() {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsCount = 3000;
+            const posArray = new Float32Array(starsCount * 3);
+            for(let i = 0; i < starsCount * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 1000;
+            }
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const starsMaterial = new THREE.PointsMaterial({size: 0.15, color: 0xffffff, transparent: true, opacity: 0.8});
+            const starMesh = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starMesh);
+        }
+
+        function resetSimulation() {
+            // 清理旧对象
+            if (bodies.length > 0) {
+                bodies.forEach(b => {
+                    if (b.mesh && b.mesh.parent) {
+                        scene.remove(b.mesh);
+                    }
+                    if (b.trailLine && b.trailLine.parent) {
+                        scene.remove(b.trailLine);
+                    }
+                    if (b.lineGeometry) {
+                        b.lineGeometry.dispose();
+                    }
+                    if (b.mesh) {
+                        if (b.mesh.geometry) b.mesh.geometry.dispose();
+                        if (b.mesh.material) b.mesh.material.dispose();
+                    }
+                });
+            }
+            bodies = [];
+            shadowBodies = [];
+
+            const m1 = parseFloat(document.getElementById('mass1').value);
+            const m2 = parseFloat(document.getElementById('mass2').value);
+            const m3 = parseFloat(document.getElementById('mass3').value);
+            
+            // 确保初始位置和速度设置正确
+            bodies.push(new Body(0xff4444, [12, 0, 0], [0, 0.6, 0.15], m1, 'A'));
+            bodies.push(new Body(0x44ff44, [-12, 0, 0], [0, -0.6, -0.15], m2, 'B'));
+            bodies.push(new Body(0x4444ff, [0, 12, 7], [0.25, 0, 0], m3, 'C'));
+
+            // 重置物理分析参数
+            initialEnergy = calculateSystemEnergy();
+            energyHistory = [initialEnergy];
+            totalTime = 0;
+            lyapunovExponent = 0;
+            createShadowSystem();
+
+            // 确保模拟状态正确
+            isPaused = false;
+            const pauseBtn = document.getElementById('btn-pause');
+            pauseBtn.textContent = '暂停模拟';
+            pauseBtn.className = 'running';
+        }
+
+        function setupUI() {
+            const m1Slider = document.getElementById('mass1');
+            const m2Slider = document.getElementById('mass2');
+            const m3Slider = document.getElementById('mass3');
+            const timeScaleSlider = document.getElementById('timeScale');
+            const m1Val = document.getElementById('val-m1');
+            const m2Val = document.getElementById('val-m2');
+            const m3Val = document.getElementById('val-m3');
+            const timeScaleVal = document.getElementById('val-timeScale');
+
+            m1Slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (bodies[0]) {
+                    bodies[0].mass = val;
+                    bodies[0].restMass = val;
+                }
+                m1Val.textContent = val.toFixed(1);
+            });
+            m2Slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (bodies[1]) {
+                    bodies[1].mass = val;
+                    bodies[1].restMass = val;
+                }
+                m2Val.textContent = val.toFixed(1);
+            });
+            m3Slider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                if (bodies[2]) {
+                    bodies[2].mass = val;
+                    bodies[2].restMass = val;
+                }
+                m3Val.textContent = val.toFixed(1);
+            });
+
+            // 时间速率控制
+            timeScaleSlider.addEventListener('input', (e) => {
+                timeScale = parseFloat(e.target.value);
+                timeScaleVal.textContent = timeScale.toFixed(1) + 'x';
+            });
+
+            document.getElementById('btn-reset').addEventListener('click', resetSimulation);
+            const pauseBtn = document.getElementById('btn-pause');
+            pauseBtn.addEventListener('click', () => { 
+                isPaused = !isPaused; 
+                pauseBtn.textContent = isPaused ? '继续模拟' : '暂停模拟';
+                pauseBtn.className = isPaused ? 'paused' : 'running';
+            });
+
+            document.getElementById('showPhysics').addEventListener('change', (e) => {
+                updatePhysicsPanel();
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (!isPaused && bodies.length > 0) {
+                const deltaTime = BASE_TIME_STEP * timeScale;
+                
+                for(let k=0; k<2; k++){
+                    const enableRel = document.getElementById('enableRelativity').checked;
+                    Body.updateForces(bodies, enableRel);
+                    Body.updatePositions(bodies, deltaTime);
+                    updateShadowAndLyapunov(deltaTime);
+                    totalTime += deltaTime;
+                }
+                updatePhysicsPanel();
+            }
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // 确保页面加载完成后初始化
+        window.addEventListener('DOMContentLoaded', (event) => {
+            init();
+        });
+    </script>
+</body>
+</html>
